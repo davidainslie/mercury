@@ -1,10 +1,10 @@
 version: "3"
 
 services:
-  sqs:
-    image: kcomlabs/elasticmq
-    ports:
-      - 9324:9324
+  # sqs:
+    # image: kcomlabs/elasticmq
+    # ports:
+      # - 9324:9324
 
   s3:
     image: lphoward/fake-s3
@@ -21,12 +21,12 @@ services:
       context: .
 
     environment:
-      AWS_SQS_URI: http://sqs:9324/queue
+      # AWS_SQS_URI: http://sqs:9324/queue
       AWS_S3_URI: http://s3:4569
       WEB_SERVICES_HOCS_URI: http://hocs:9000
 
     depends_on:
-      - sqs
+      # - sqs
       - s3
       - hocs
 

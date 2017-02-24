@@ -8,17 +8,13 @@ Application built with the following (main) technologies:
 
 - Akka
 
-- AWS SQS
-
 - AWS S3
 
 - Play Web Services
 
 Introduction
 ------------
-Subscribes to messages (specifically emails) published to AWS SQS.
-These messages are consumed and translated (1st phase will be to PDF) and any associated attachments will be streamed in from AWS S3.
-Finally, messages and associated attachments are streamed to another service.
+Consume resources from AWS S3 to be translated (1st phase will be to PDF) and streamed to another service.
 
 Application
 -----------
@@ -162,7 +158,6 @@ curl -k  -L -X POST -H 'Content-Type: application/x-www-form-urlencoded' -d 'Act
 ```
 
 At the time of writing the docker images used for each service are:
-- kcomlabs/elasticmq to run an instance of Elasticmq, an implementation of AWS SQS.
 - lphoward/fake-s3 to run an instance of a trimmed down implementation of AWS S3.
 - hocs-fake to run an inhouse custom version of the HOCS system, with the minimal functionality faking the real system.
 ``` 

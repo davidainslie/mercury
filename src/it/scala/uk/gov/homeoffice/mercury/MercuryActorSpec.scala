@@ -12,7 +12,6 @@ import org.specs2.mock.Mockito
 import org.specs2.mutable.Specification
 import uk.gov.homeoffice.akka.{ActorExpectations, ActorSystemSpecification}
 import uk.gov.homeoffice.aws.s3.S3
-import uk.gov.homeoffice.aws.sqs.{SQS, _}
 import uk.gov.homeoffice.configuration.HasConfig
 import uk.gov.homeoffice.mercury.MediaTypes.Implicits._
 import uk.gov.homeoffice.mercury.boot.configuration.{HocsCredentials, HocsWebService}
@@ -33,39 +32,31 @@ class MercuryActorSpec(implicit env: ExecutionEnv) extends Specification with Ac
   val `text/plain`: String = akka.http.scaladsl.model.MediaTypes.`text/plain`
 
   trait Context extends ActorSystemContext with ActorExpectations {
-    var sqs: SQS = _
     var s3: S3 = _
     var hocsWebService: WebService = _
 
     override def around[R: AsResult](r: => R): Result = try {
-      sqs = uk.gov.homeoffice.mercury.boot.configuration.SQS()
       s3 = uk.gov.homeoffice.mercury.boot.configuration.S3(new ClientConfiguration().withRetryPolicy(PredefinedRetryPolicies.NO_RETRY_POLICY))
       hocsWebService = HocsWebService()
 
       super.around(r)
     } finally {
       // Need to close everything down (gracefully) if running in sbt interactive mode, we don't want anything hanging around.
-      Try { sqs.sqsClient.shutdown() }
       Try { s3.s3Client.shutdown() }
       Try { hocsWebService.wsClient.close() }
     }
   }
 
   "Mercury" should {
-    "consume SQS message, acquire its associated file and stream these to HOCS" in new Context {
+    "consume S3 resource and stream to HOCS" in new Context {
       val mercuryActor = TestActorRef {
         Props {
-          new MercuryActor(sqs, s3, HocsCredentials(), hocsWebService)(Seq(testActor))
+          new MercuryActor(s3, HocsCredentials(), hocsWebService)(Seq(testActor))
         }
       }
 
       val file = new File("src/test/resources/s3/test-file.txt")
-
-      s3.push(s"folder/${file.getName}", file).map { _ =>
-        implicit val sqsClient = sqs.sqsClient
-
-        sqsClient.sendMessage(queueUrl(sqs.queue.queueName), "folder")
-      }
+      s3.push(s"folder/${file.getName}", file)
 
       eventuallyExpectMsg[String] {
         case s => s == "caseRef"

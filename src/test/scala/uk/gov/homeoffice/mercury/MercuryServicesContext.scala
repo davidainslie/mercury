@@ -6,9 +6,8 @@ import play.api.mvc.Results.{Ok, Unauthorized}
 import play.api.mvc.{Action, Handler, Request, RequestHeader}
 import play.api.routing.sird._
 import uk.gov.homeoffice.aws.s3.S3ServerEmbedded
-import uk.gov.homeoffice.aws.sqs.SQSServerEmbedded
 
-trait MercuryServicesContext extends SQSServerEmbedded with S3ServerEmbedded {
+trait MercuryServicesContext extends S3ServerEmbedded {
   val userName = "userName"
   val password = "password"
   val credentials = Credentials(userName, password)

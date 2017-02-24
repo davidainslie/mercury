@@ -3,20 +3,18 @@ package uk.gov.homeoffice.mercury
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import akka.actor.{ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import uk.gov.homeoffice.aws.s3.S3
-import uk.gov.homeoffice.aws.sqs.{Message, SQS, SQSActor}
+import uk.gov.homeoffice.aws.sqs.Message
 import uk.gov.homeoffice.web.WebService
 
 object MercuryActor {
-  def props(sqs: SQS, s3: S3, credentials: Credentials, webService: WebService)(implicit listeners: Seq[ActorRef] = Seq.empty[ActorRef]) = Props {
-    // TODO Do we need a CryptoFilter (if we do, then we need these "secrets")?
-    // implicit val secrets = Secrets(config.getString("amazon.sqs.encryption-key"), config.getString("amazon.sqs.signing-password"))
-    new MercuryActor(sqs, s3, credentials, webService/*, new CryptoFilter*/)
+  def props(s3: S3, credentials: Credentials, webService: WebService)(implicit listeners: Seq[ActorRef] = Seq.empty[ActorRef]) = Props {
+    new MercuryActor(s3, credentials, webService)
   }
 }
 
-class MercuryActor(sqs: SQS, val s3: S3, credentials: Credentials, implicit val webService: WebService)(implicit listeners: Seq[ActorRef] = Seq.empty[ActorRef]) extends SQSActor(sqs) {
+class MercuryActor(val s3: S3, credentials: Credentials, implicit val webService: WebService)(implicit listeners: Seq[ActorRef] = Seq.empty[ActorRef]) extends Actor with ActorLogging {
   implicit val ec = context.dispatcher
 
   override def preStart(): Unit = {
@@ -27,42 +25,41 @@ class MercuryActor(sqs: SQS, val s3: S3, credentials: Credentials, implicit val 
   override def receive: Receive = {
     case AuthorizeMercury =>
       Mercury authorize credentials map { webService =>
-        context become authorized(webService)
+        context become authorized(Mercury(s3, webService))
+        listeners foreach { _ ! Authorized }
+        context.system.scheduler.scheduleOnce(10 seconds, self, Publish)
       } recover {
         case t: Throwable =>
-          error(s"Failed to authorize Mercury with webservice ${webService.host} because of ${t.getMessage}")
+          log.error(s"Failed to authorize Mercury with webservice ${webService.host} because of ${t.getMessage}")
           context.system.scheduler.scheduleOnce(10 seconds, self, AuthorizeMercury)
       }
 
     case _: Message =>
       val warning = "Received a message but Mercury is not authorized to perform publication"
-      warn(warning)
+      log.warning(warning)
       sender() ! warning
   }
 
-  def authorized(webService: WebService with Authorization): Receive = {
-    val mercury = Mercury(s3, webService)
+  def authorized(mercury: Mercury): Receive = {
+    case Publish =>
+      val client = sender()
 
-    listeners foreach { _ ! Authorized }
-
-    { case m: Message =>
-        val client = sender()
-
-        mercury.publish(m).map { publication =>
-          client ! publication.caseReference // TODO Is it just "caseRef"???
-          listeners foreach { _ ! publication.caseReference }
-          delete(m)
-        } recoverWith {
-          case t: Throwable =>
-            client ! t.getMessage
-            listeners foreach { _ ! t.getMessage }
-            delete(m)
-            Future failed t
-        }
-    }
+      mercury.publish.map { publications =>
+        client ! publications
+        listeners foreach { _ ! publications }
+        context.system.scheduler.scheduleOnce(10 seconds, self, Publish)
+      } recoverWith {
+        case t: Throwable =>
+          client ! t.getMessage
+          listeners foreach { _ ! t.getMessage }
+          context.system.scheduler.scheduleOnce(10 seconds, self, Publish)
+          Future failed t
+      }
   }
 }
 
 case object AuthorizeMercury
 
 case object Authorized
+
+case object Publish
